@@ -233,6 +233,28 @@ const support = await getEmbeddedPostgresTestSupport();
         .where(eq(runIdentityContexts.runId, input.runId));
       expect(JSON.stringify(history)).not.toContain("test-token-");
     });
+
+    it("keeps agent commit authorship while managed GitHub access changes", async () => {
+      const input = await seed();
+      await db.update(agents).set({ adapterConfig: {
+        gitAuthorName: "Iris", gitAuthorEmail: "iris@agents.example",
+      } }).where(eq(agents.id, input.agentId));
+      await grant(input, "A");
+      await grant(input, "B");
+      for (const user of ["A", "B", "A"]) {
+        await switchTo(input, user);
+        const result = await resolveGitHubOperationCredentials(db, input);
+        expect(result.login).toBe(user);
+        expect(result.env.GH_TOKEN).toBe(`test-token-${user}`);
+        expect(result.env.GIT_AUTHOR_NAME).toBe("Iris");
+        expect(result.env.GIT_AUTHOR_EMAIL).toBe("iris@agents.example");
+        expect(result.env.GIT_COMMITTER_EMAIL).toBe("iris@agents.example");
+        const count = Number(result.env.GIT_CONFIG_COUNT);
+        expect(result.env[`GIT_CONFIG_KEY_${count - 2}`]).toBe("user.name");
+        expect(result.env[`GIT_CONFIG_VALUE_${count - 2}`]).toBe("Iris");
+        expect(result.env[`GIT_CONFIG_VALUE_${count - 1}`]).toBe("iris@agents.example");
+      }
+    });
     it("returns no credential for unconnected users, removed membership, or ambiguous personal accounts", async () => {
       const input = await seed();
       await grant(input, "A");

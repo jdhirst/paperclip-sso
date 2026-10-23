@@ -28,6 +28,24 @@ export type GitHubCredentialSummary = {
   authenticationMode?: "managed" | "host" | "anonymous";
 };
 
+/** Commit attribution is independent of the account that grants repository access. */
+export function withAgentGitCommitIdentity(env: Record<string, string>, config: unknown) {
+  const settings = config && typeof config === "object" ? config as Record<string, unknown> : {};
+  const name = typeof settings.gitAuthorName === "string" ? settings.gitAuthorName.trim() : "";
+  const email = typeof settings.gitAuthorEmail === "string" ? settings.gitAuthorEmail.trim() : "";
+  if (!name || !email || /[\r\n\0<>]/.test(name) || /[\s\0<>]/.test(email) || !email.includes("@")) return env;
+  const count = Number(env.GIT_CONFIG_COUNT ?? "0");
+  if (!Number.isSafeInteger(count) || count < 0) return env;
+  return {
+    ...env,
+    GIT_AUTHOR_NAME: name, GIT_AUTHOR_EMAIL: email,
+    GIT_COMMITTER_NAME: name, GIT_COMMITTER_EMAIL: email,
+    GIT_CONFIG_COUNT: String(count + 2),
+    [`GIT_CONFIG_KEY_${count}`]: "user.name", [`GIT_CONFIG_VALUE_${count}`]: name,
+    [`GIT_CONFIG_KEY_${count + 1}`]: "user.email", [`GIT_CONFIG_VALUE_${count + 1}`]: email,
+  };
+}
+
 /** A raw GitHub token cannot enforce the low-trust read-only tool boundary. */
 async function allowsGitHubCredentialExport(
   db: Db,
@@ -165,7 +183,9 @@ export async function resolveGitHubOperationCredentials(
         grantId: resolved.credential.grantId,
         authenticationMode: "managed",
       };
-      env = buildGitAuthInvocation(resolved.credential).env;
+      const [agent] = await db.select({ adapterConfig: agents.adapterConfig }).from(agents)
+        .where(and(eq(agents.id, input.agentId), eq(agents.companyId, input.companyId)));
+      env = withAgentGitCommitIdentity(buildGitAuthInvocation(resolved.credential).env, agent?.adapterConfig);
     } else {
       summary = {
         status: resolved.configured ? "unavailable" : "absent",

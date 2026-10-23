@@ -18,6 +18,10 @@ Current implementation status:
 - Node.js 24.11+
 - pnpm 9+
 
+### Agent Git commit attribution
+
+Set `adapterConfig.gitAuthorName` and `adapterConfig.gitAuthorEmail` together to give an agent its own Git author and committer identity. Managed GitHub operations use these values for commit metadata and process-scoped `user.name` and `user.email`. The connected GitHub account still supplies repository access and remains the recorded authentication identity. If these optional values are missing or invalid, the existing GitHub noreply identity remains the fallback. This does not create a separate GitHub account or review identity.
+
 ## Dependency Lockfile Policy
 
 GitHub Actions owns `pnpm-lock.yaml`.
