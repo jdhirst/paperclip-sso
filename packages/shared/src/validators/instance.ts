@@ -8,6 +8,7 @@ import {
 } from "../types/instance.js";
 import { feedbackDataSharingPreferenceSchema } from "./feedback.js";
 import { shapeWithoutDefaults } from "./partial.js";
+import { ssoProviderConfigSchema } from "../config-schema.js";
 
 function presetSchema<T extends readonly number[]>(presets: T, label: string) {
   return z.number().refine(
@@ -131,6 +132,31 @@ export const startTaskDrainRequestSchema = z.object({
   ttlMs: z.number().int().positive().max(MAX_TASK_DRAIN_TTL_MS).nullable().optional(),
 }).strict();
 
+const ssoProvidersSchema = z
+  .array(ssoProviderConfigSchema)
+  .superRefine((providers, ctx) => {
+    // Better Auth registers providers by id — a duplicate silently
+    // overwrites the earlier registration, so reject it at the boundary.
+    const seen = new Set<string>();
+    providers.forEach((provider, index) => {
+      if (seen.has(provider.providerId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `duplicate providerId "${provider.providerId}" — provider ids must be unique`,
+          path: [index, "providerId"],
+        });
+      }
+      seen.add(provider.providerId);
+    });
+  });
+
+export const instanceSsoSettingsSchema = z.object({
+  enabled: z.boolean().default(false),
+  providers: ssoProvidersSchema.default([]),
+});
+
+export const patchInstanceSsoSettingsSchema = instanceSsoSettingsSchema.partial();
+
 export type InstanceGeneralSettings = z.infer<typeof instanceGeneralSettingsSchema>;
 // The patch schema removes each default so an absent key stays absent. Declare
 // the type from the full settings type, so every field keeps its precise type.
@@ -142,6 +168,7 @@ export type PatchInstanceExperimentalSettings = Partial<
     "worktreeRunExecutionActivatedAt" | "worktreeRunExecutionActivationInstanceId"
   >
 >;
+export type PatchInstanceSsoSettings = z.infer<typeof patchInstanceSsoSettingsSchema>;
 export type PatchInstanceSettings = z.infer<typeof patchInstanceSettingsSchema>;
 export type StartTaskDrainRequest = z.infer<typeof startTaskDrainRequestSchema>;
 
@@ -150,6 +177,7 @@ export const instanceSettingsSchema = z.object({
   defaultEnvironmentId: z.string().guid().nullable(),
   general: instanceGeneralSettingsSchema,
   experimental: instanceExperimentalSettingsWithManagedSchema,
+  sso: instanceSsoSettingsSchema,
   createdAt: z.union([z.date(), z.string().datetime()]),
   updatedAt: z.union([z.date(), z.string().datetime()]),
 }).strict();

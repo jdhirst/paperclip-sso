@@ -151,6 +151,14 @@ export function CompanySettingsSidebar() {
               end
             />
           )}
+          {showPage("instance.sso") && (
+            <SidebarNavItem
+              to={`${INSTANCE_SETTINGS_PATH_PREFIX}/sso`}
+              label="SSO"
+              icon={KeyRound}
+              end
+            />
+          )}
           {showPage("instance.heartbeats") && (
             <SidebarNavItem
               to={`${INSTANCE_SETTINGS_PATH_PREFIX}/heartbeats`}

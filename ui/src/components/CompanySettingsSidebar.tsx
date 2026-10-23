@@ -150,6 +150,14 @@ export function CompanySettingsSidebar() {
               end
             />
           )}
+          {showPage("instance.sso") && (
+            <SidebarNavItem
+              to={`${INSTANCE_SETTINGS_PATH_PREFIX}/sso`}
+              label="SSO"
+              icon={KeyRound}
+              end
+            />
+          )}
           {showPage("company.export") && (
             <SidebarNavItem to="/company/export" label="Export" icon={Download} />
           )}

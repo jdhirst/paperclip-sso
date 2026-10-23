@@ -86,10 +86,10 @@ Daytona snapshot for future leases.
 `packages/shared/src/settings-visibility.ts`:
 
 - Any instance settings page: `instance.profile`, `instance.environments`,
-  `instance.access`, `instance.experimental`,
+  `instance.access`, `instance.sso`, `instance.experimental`,
   `instance.plugins`, `instance.adapters` — removed from navigation and
   routing (the General page is the settings root and stays visible). Hiding
-  `instance.access`, `instance.plugins`, or `instance.adapters` also floors
+  `instance.access`, `instance.sso`, `instance.plugins`, or `instance.adapters` also floors
   their management endpoints with `403 settings_operator_managed`; hiding
   `instance.experimental` floors every experimental toggle write.
 - Any Instance → General section: `instance.general.censorUsernameInLogs`,

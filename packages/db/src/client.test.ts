@@ -13,6 +13,8 @@ import {
   createDb,
   ensurePostgresDatabase,
   inspectMigrations,
+  quoteLiteral,
+  reconcilePendingMigrationHistory,
   resetPostgresDatabase,
 } from "./client.js";
 import {
@@ -2067,5 +2069,96 @@ describeEmbeddedPostgres("applyPendingMigrations", () => {
       }
     },
     30_000,
+  );
+  it(
+    "reconciles migration 0306 as already-applied instead of re-running its DDL",
+    async () => {
+      const connectionString = await createTempDatabase();
+
+      await applyPendingMigrations(connectionString);
+
+      const sql = postgres(connectionString, { max: 1, onnotice: () => {} });
+      try {
+        const ssoMigrationHash = await migrationHash(
+          "0306_sso_instance_settings.sql",
+        );
+
+        // Simulate the upgrade path: an existing installation whose "sso"
+        // column already exists but whose history row for 0306 is missing.
+        // Deleting 0306's history row here reproduces that state (0306's DDL
+        // already ran once via applyPendingMigrations() above, so the column
+        // exists, but its history row is what reconcilePendingMigrationHistory()
+        // must repair without re-running the ALTER TABLE).
+        await sql.unsafe(
+          `DELETE FROM "drizzle"."__drizzle_migrations" WHERE hash = ${quoteLiteral(ssoMigrationHash)}`,
+        );
+
+        const columns = await sql.unsafe<{ column_name: string }[]>(
+          `
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'instance_settings'
+              AND column_name = 'sso'
+          `,
+        );
+        expect(columns).toHaveLength(1);
+      } finally {
+        await sql.end();
+      }
+
+      const pendingState = await inspectMigrations(connectionString);
+      expect(pendingState).toMatchObject({
+        status: "needsMigrations",
+        pendingMigrations: ["0306_sso_instance_settings.sql"],
+        reason: "pending-migrations",
+      });
+
+      // Regression check: 0306's only statement must be recognised by
+      // migrationStatementAlreadyApplied() (an ALTER TABLE ... ADD COLUMN
+      // form) so reconciliation repairs it via a history-table insert rather
+      // than stopping short. If 0306 ever gains a leading statement the
+      // matcher does not recognise (e.g. SET LOCAL or a comment),
+      // reconciliation will report nothing repaired here.
+      const repair = await reconcilePendingMigrationHistory(connectionString);
+      expect(repair.repairedMigrations).toEqual([
+        "0306_sso_instance_settings.sql",
+      ]);
+      expect(repair.remainingMigrations).toEqual([]);
+
+      const finalState = await inspectMigrations(connectionString);
+      expect(finalState.status).toBe("upToDate");
+
+      // And confirm reconciliation genuinely skipped re-execution: still exactly
+      // one "sso" column, no duplicate-column error, no second history row.
+      const verifySql = postgres(connectionString, { max: 1, onnotice: () => {} });
+      try {
+        const columns = await verifySql.unsafe<{ column_name: string }[]>(
+          `
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'instance_settings'
+              AND column_name = 'sso'
+          `,
+        );
+        expect(columns).toHaveLength(1);
+
+        const ssoMigrationHash = await migrationHash(
+          "0306_sso_instance_settings.sql",
+        );
+        const historyRows = await verifySql.unsafe<{ count: number }[]>(
+          `
+            SELECT count(*)::int AS count
+            FROM "drizzle"."__drizzle_migrations"
+            WHERE hash = ${quoteLiteral(ssoMigrationHash)}
+          `,
+        );
+        expect(historyRows[0]?.count).toBe(1);
+      } finally {
+        await verifySql.end();
+      }
+    },
+    20_000,
   );
 });
